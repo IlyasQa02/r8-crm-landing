@@ -10,8 +10,9 @@
 index.html            — разметка страницы
 css/style.css         — все стили
 js/main.js            — вся логика (анимации, табы, калькулятор, формы, видео)
-img/logo-r8-dark.png  — логотип для светлого фона (шапка, favicon)
+img/logo-r8-dark.png  — логотип для светлого фона (шапка)
 img/logo-r8-light.png — логотип для тёмного фона (подвал)
+img/favicon.png       — иконка вкладки браузера
 img/camera-box.jpg    — кадр с камеры в блоке «Мойка мимо кассы»
 ```
 
@@ -51,4 +52,4 @@ YouTube-ролик `HsANYe8osQo` подключается по клику на �
 - Телефон: +7 701 722 02 15 (шапка, блок заявки, подвал)
 - WhatsApp: https://wa.me/77017220215
 - Почта: info@webmoika.kz
-- Вход в CRM: https://r8crm.webmoika.kz
+- Вход в CRM: https://crm.webmoika.kz

@@ -175,6 +175,7 @@ if(!still&&'IntersectionObserver' in window){
 /* ---------- отправка заявок на почту info@webmoika.kz ----------
    Скрипт лежит на хостинге webmoika.kz (папка server/ в репозитории), письмо уходит через SMTP ящика info@. */
 const LEAD_URL='https://webmoika.kz/lead/send.php';
+const hp=s=>{const el=$(s);return el?el.value:''}; // скрытое поле-ловушка; если в разметке его нет, форма всё равно работает
 async function sendLead(data){
   const fd=new FormData();Object.entries(data).forEach(([k,v])=>fd.append(k,v));fd.append('page',location.href);
   const r=await fetch(LEAD_URL,{method:'POST',body:fd});
@@ -192,7 +193,7 @@ async function sendLead(data){
  $('#cpForm').addEventListener('submit',async e=>{e.preventDefault();const ph=$('#cp-phone');
    if(ph.value.replace(/\D/g,'').length<10){ph.setAttribute('aria-invalid','true');$('#cpErr').textContent='Укажите телефон полностью';ph.focus();return}
    const b=e.target.querySelector('button[type=submit]');b.disabled=true;b.textContent='Отправляем…';
-   try{await sendLead({form:'callback',name:$('#cp-name').value.trim(),phone:ph.value.trim(),website:$('#cp-hp').value});
+   try{await sendLead({form:'callback',name:$('#cp-name').value.trim(),phone:ph.value.trim(),website:hp('#cp-hp')});
      $('#cpHost').innerHTML='<div class="done" role="status"><b style="font-size:16px">Спасибо! Перезвоним в течение 15 минут.</b></div>'}
    catch(_){b.disabled=false;b.textContent='Жду звонка';$('#cpErr').textContent='Не удалось отправить. Позвоните нам: +7 701 722 02 15'}});
  $('#cp-phone').addEventListener('input',e=>{e.target.removeAttribute('aria-invalid');$('#cpErr').textContent=''});}
@@ -203,7 +204,7 @@ $('#lead').addEventListener('submit',async e=>{e.preventDefault();const ph=$('#f
   if(ph.value.replace(/\D/g,'').length<10){ph.setAttribute('aria-invalid','true');$('#ferr').textContent='Укажите телефон полностью, например +7 701 123 45 67';ph.focus();return}
   const esc=s=>s.replace(/[<>&"]/g,'');const name=esc($('#f-name').value.trim());
   const b=e.target.querySelector('button[type=submit]');b.disabled=true;b.textContent='Отправляем…';
-  try{await sendLead({form:'demo',name:$('#f-name').value.trim(),phone:ph.value.trim(),boxes:$('#f-box').value,cameras:$('#f-cam').value,plan:$('#f-plan').value,website:$('#f-hp').value})}
+  try{await sendLead({form:'demo',name:$('#f-name').value.trim(),phone:ph.value.trim(),boxes:$('#f-box').value,cameras:$('#f-cam').value,plan:$('#f-plan').value,website:hp('#f-hp')})}
   catch(_){b.disabled=false;b.textContent='Получить демо';$('#ferr').textContent='Не удалось отправить заявку. Позвоните или напишите в WhatsApp: +7 701 722 02 15';return}
   $('#formHost').innerHTML='<div class="done" role="status"><span class="ok"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span><h3 style="font-size:24px">Спасибо'+(name?', '+name:'')+'!</h3><p style="color:var(--ink-2)">Перезвоним по номеру '+esc(ph.value)+'.</p></div>'});
 $('#f-phone').addEventListener('input',e=>{e.target.removeAttribute('aria-invalid');$('#ferr').textContent=''});

@@ -6,54 +6,63 @@
  * и «Запишитесь на демо» (form=demo). Отвечает JSON {ok, message}.
  *
  * Логин и пароль SMTP лежат в config.php рядом (его нет в репозитории, см. config.example.php).
- * Внешних библиотек не нужно: SMTP-клиент встроен ниже.
+ * Внешних библиотек не нужно: SMTP-клиент встроен ниже. Работает на PHP 5.6+.
  */
 
-declare(strict_types=1);
+function reply($code, $ok, $msg) {
+    http_response_code($code);
+    if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(array('ok' => $ok, 'message' => $msg));
+    exit;
+}
+
+function srv($key, $default = '') {
+    return isset($_SERVER[$key]) ? (string)$_SERVER[$key] : $default;
+}
+
+/** Обрезка строки по символам (UTF-8), даже если на хостинге нет mbstring. */
+function cut($s, $max) {
+    if (function_exists('mb_substr')) return mb_substr($s, 0, $max, 'UTF-8');
+    if (function_exists('iconv_substr')) return (string)iconv_substr($s, 0, $max, 'UTF-8');
+    return substr($s, 0, $max * 2);
+}
+
+/** Одна строка без тегов и управляющих символов, не длиннее $max символов. */
+function field($key, $max = 100) {
+    $v = isset($_POST[$key]) ? (string)$_POST[$key] : '';
+    $v = strip_tags(trim($v));
+    $v = preg_replace('/[\x00-\x1F\x7F]+/', ' ', $v);
+    return cut((string)$v, $max);
+}
 
 $cfgFile = __DIR__ . '/config.php';
 if (!is_file($cfgFile)) {
-    http_response_code(500);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['ok' => false, 'message' => 'Не настроен config.php'], JSON_UNESCAPED_UNICODE);
-    exit;
+    reply(500, false, 'Не настроен config.php');
 }
 $cfg = require $cfgFile;
+if (!is_array($cfg)) {
+    reply(500, false, 'config.php должен возвращать массив (return [...])');
+}
 
 /* ---------- CORS: страницу открывают с GitHub Pages и с webmoika.kz ---------- */
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, $cfg['allowed_origins'], true)) {
+$origin = srv('HTTP_ORIGIN');
+$allowed = in_array($origin, $cfg['allowed_origins'], true);
+if ($allowed) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Vary: Origin');
     header('Access-Control-Allow-Methods: POST, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type');
     header('Access-Control-Max-Age: 86400');
 }
-if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+$method = srv('REQUEST_METHOD');
+if ($method === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
-
-header('Content-Type: application/json; charset=utf-8');
-
-function reply(int $code, bool $ok, string $msg): void {
-    http_response_code($code);
-    echo json_encode(['ok' => $ok, 'message' => $msg], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-/** Одна строка без тегов и переводов строк, не длиннее $max символов. */
-function field(string $key, int $max = 100): string {
-    $v = isset($_POST[$key]) ? (string)$_POST[$key] : '';
-    $v = strip_tags(trim($v));
-    $v = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $v) ?? '';
-    return mb_substr($v, 0, $max, 'UTF-8');
-}
-
-if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+if ($method !== 'POST') {
     reply(405, false, 'Неверный запрос.');
 }
-if ($origin !== '' && !in_array($origin, $cfg['allowed_origins'], true)) {
+if ($origin !== '' && !$allowed) {
     reply(403, false, 'Неверный запрос.');
 }
 
@@ -66,24 +75,24 @@ $form  = field('form', 20) === 'demo' ? 'demo' : 'callback';
 $name  = field('name', 80);
 $phone = field('phone', 30);
 
-if (strlen(preg_replace('/\D/', '', $phone) ?? '') < 10) {
+if (strlen(preg_replace('/\D/', '', $phone)) < 10) {
     reply(400, false, 'Укажите телефон полностью.');
 }
 
 /* ---------- ограничение частоты с одного IP, чтобы ящик не завалили спамом ---------- */
-$ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+$ip = srv('REMOTE_ADDR', 'unknown');
 $rlDir = sys_get_temp_dir() . '/r8-lead-rl';
 @mkdir($rlDir, 0700, true);
 $rlFile = $rlDir . '/' . md5($ip);
 $now = time();
-$hits = [];
+$hits = array();
 if (is_file($rlFile)) {
-    $hits = array_filter(
-        array_map('intval', explode(',', (string)@file_get_contents($rlFile))),
-        fn($t) => $t > $now - $cfg['rate_window_sec']
-    );
+    foreach (explode(',', (string)@file_get_contents($rlFile)) as $t) {
+        $t = (int)$t;
+        if ($t > $now - (int)$cfg['rate_window_sec']) $hits[] = $t;
+    }
 }
-if (count($hits) >= $cfg['rate_max']) {
+if (count($hits) >= (int)$cfg['rate_max']) {
     reply(429, false, 'Слишком много заявок. Позвоните нам: +7 701 722 02 15');
 }
 $hits[] = $now;
@@ -92,7 +101,10 @@ $hits[] = $now;
 /* ---------- текст письма ---------- */
 $subject = ($form === 'demo' ? 'Заявка на демо R8 CRM' : 'Обратный звонок R8 CRM') . ': ' . $phone;
 
-$lines = [];
+$tz = new DateTimeZone('Asia/Almaty');
+$when = new DateTime('now', $tz);
+
+$lines = array();
 $lines[] = 'Имя: ' . ($name !== '' ? $name : 'не указано');
 $lines[] = 'Телефон: ' . $phone;
 if ($form === 'demo') {
@@ -102,14 +114,14 @@ if ($form === 'demo') {
 }
 $lines[] = '';
 $lines[] = 'Форма: ' . ($form === 'demo' ? '«Запишитесь на демо»' : '«Перезвоним за 15 минут»');
-$lines[] = 'Время: ' . (new DateTime('now', new DateTimeZone('Asia/Almaty')))->format('d.m.Y H:i');
+$lines[] = 'Время: ' . $when->format('d.m.Y H:i');
 $lines[] = 'Страница: ' . field('page', 300);
 $lines[] = 'IP: ' . $ip;
 $body = implode("\r\n", $lines);
 
 try {
     smtp_send($cfg, $cfg['mail_to'], $subject, $body);
-} catch (Throwable $e) {
+} catch (Exception $e) {
     error_log('[r8-lead] ' . $e->getMessage());
     reply(502, false, 'Не удалось отправить заявку.');
 }
@@ -119,71 +131,74 @@ reply(200, true, 'Спасибо! Перезвоним в течение 15 ми
 
 /* ====================== минимальный SMTP-клиент ====================== */
 
-function mime_header(string $s): string {
+function mime_header($s) {
     return '=?UTF-8?B?' . base64_encode($s) . '?=';
 }
 
-function smtp_send(array $cfg, string $to, string $subject, string $body): void {
+function smtp_read($fp) {
+    $data = '';
+    while (($line = fgets($fp, 1024)) !== false) {
+        $data .= $line;
+        if (strlen($line) < 4 || $line[3] === ' ') break;
+    }
+    return array((int)substr($data, 0, 3), $data);
+}
+
+function smtp_cmd($fp, $line, $expect, $what) {
+    if ($line !== null) fwrite($fp, $line . "\r\n");
+    list($code, $resp) = smtp_read($fp);
+    if (!in_array($code, $expect, true)) {
+        throw new Exception('SMTP ' . $what . ': ' . trim($resp));
+    }
+}
+
+function smtp_send($cfg, $to, $subject, $body) {
     $secure = $cfg['smtp_secure']; // 'ssl' (порт 465) или 'tls' (STARTTLS, порт 587)
-    $ctx = stream_context_create(['ssl' => [
+    $ctx = stream_context_create(array('ssl' => array(
         'verify_peer'      => true,
         'verify_peer_name' => true,
         'peer_name'        => $cfg['smtp_host'],
-    ]]);
+    )));
     $remote = ($secure === 'ssl' ? 'ssl://' : 'tcp://') . $cfg['smtp_host'] . ':' . $cfg['smtp_port'];
+    $errno = 0; $errstr = '';
     $fp = @stream_socket_client($remote, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
     if (!$fp) {
-        throw new RuntimeException("connect $remote: $errstr ($errno)");
+        throw new Exception("connect $remote: $errstr ($errno)");
     }
     stream_set_timeout($fp, 15);
 
-    $read = function () use ($fp): array {
-        $data = '';
-        while (($line = fgets($fp, 1024)) !== false) {
-            $data .= $line;
-            if (strlen($line) < 4 || $line[3] === ' ') break;
-        }
-        return [(int)substr($data, 0, 3), $data];
-    };
-    $cmd = function (?string $line, array $expect, string $what) use ($fp, $read): void {
-        if ($line !== null) fwrite($fp, $line . "\r\n");
-        [$code, $resp] = $read();
-        if (!in_array($code, $expect, true)) {
-            throw new RuntimeException("SMTP $what: " . trim($resp));
-        }
-    };
-
-    $helo = $_SERVER['SERVER_NAME'] ?? 'webmoika.kz';
-    $cmd(null, [220], 'greeting');
-    $cmd("EHLO $helo", [250], 'EHLO');
+    $helo = srv('SERVER_NAME', 'webmoika.kz');
+    smtp_cmd($fp, null, array(220), 'greeting');
+    smtp_cmd($fp, "EHLO $helo", array(250), 'EHLO');
     if ($secure === 'tls') {
-        $cmd('STARTTLS', [220], 'STARTTLS');
-        if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT)) {
-            throw new RuntimeException('STARTTLS handshake failed');
+        smtp_cmd($fp, 'STARTTLS', array(220), 'STARTTLS');
+        if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+            throw new Exception('STARTTLS handshake failed');
         }
-        $cmd("EHLO $helo", [250], 'EHLO after TLS');
+        smtp_cmd($fp, "EHLO $helo", array(250), 'EHLO after TLS');
     }
-    $cmd('AUTH LOGIN', [334], 'AUTH');
-    $cmd(base64_encode($cfg['smtp_user']), [334], 'AUTH user');
-    $cmd(base64_encode($cfg['smtp_pass']), [235], 'AUTH password');
-    $cmd('MAIL FROM:<' . $cfg['smtp_user'] . '>', [250], 'MAIL FROM');
-    $cmd('RCPT TO:<' . $to . '>', [250, 251], 'RCPT TO');
-    $cmd('DATA', [354], 'DATA');
+    smtp_cmd($fp, 'AUTH LOGIN', array(334), 'AUTH');
+    smtp_cmd($fp, base64_encode($cfg['smtp_user']), array(334), 'AUTH user');
+    smtp_cmd($fp, base64_encode($cfg['smtp_pass']), array(235), 'AUTH password');
+    smtp_cmd($fp, 'MAIL FROM:<' . $cfg['smtp_user'] . '>', array(250), 'MAIL FROM');
+    smtp_cmd($fp, 'RCPT TO:<' . $to . '>', array(250, 251), 'RCPT TO');
+    smtp_cmd($fp, 'DATA', array(354), 'DATA');
 
-    $domain = substr(strrchr($cfg['smtp_user'], '@') ?: '@webmoika.kz', 1);
-    $headers = [
+    $at = strrchr($cfg['smtp_user'], '@');
+    $domain = $at ? substr($at, 1) : 'webmoika.kz';
+    $headers = array(
         'Date: ' . date('r'),
         'From: ' . mime_header($cfg['from_name']) . ' <' . $cfg['smtp_user'] . '>',
         'To: <' . $to . '>',
         'Subject: ' . mime_header($subject),
-        'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . $domain . '>',
+        'Message-ID: <' . md5(uniqid('', true) . mt_rand()) . '@' . $domain . '>',
         'MIME-Version: 1.0',
         'Content-Type: text/plain; charset=UTF-8',
         'Content-Transfer-Encoding: base64',
-    ];
+    );
     // base64-тело: в нём нет строк, начинающихся с точки, dot-stuffing не нужен
     $msg = implode("\r\n", $headers) . "\r\n\r\n" . rtrim(chunk_split(base64_encode($body), 76, "\r\n")) . "\r\n.";
-    $cmd($msg, [250], 'message');
+    smtp_cmd($fp, $msg, array(250), 'message');
     fwrite($fp, "QUIT\r\n");
     fclose($fp);
 }

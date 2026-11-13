@@ -10,6 +10,9 @@
 index.html            — разметка страницы
 css/style.css         — все стили
 js/main.js            — вся логика (анимации, табы, калькулятор, формы, видео)
+js/analytics.js       — счётчики и пиксели (GA4, Google Ads, Яндекс Метрика, Meta, TikTok) и цели
+img/og-image.png      — картинка-превью ссылки в мессенджерах и соцсетях (1200×630)
+robots.txt, sitemap.xml — для поисковиков
 img/logo-r8-dark.png  — логотип для светлого фона (шапка)
 img/logo-r8-light.png — логотип для тёмного фона (подвал)
 img/favicon.png       — иконка вкладки браузера
@@ -57,6 +60,54 @@ GitHub Pages не выполняет PHP, поэтому сам отправщи
 ### 3. Видео
 
 YouTube-ролик `HsANYe8osQo` подключается по клику на обложку (атрибут `data-yt` у `#vposter`). Чтобы поменять ролик, замените ID в этом атрибуте.
+
+## SEO и метаданные
+
+В `<head>` страницы уже есть:
+
+- `title` и `description` — заголовок и описание в выдаче Google и Яндекса;
+- `canonical`, `robots`, `keywords`, `theme-color`;
+- Open Graph и Twitter Card — превью ссылки в WhatsApp, Telegram, Instagram, Facebook (картинка `img/og-image.png`);
+- JSON-LD schema.org: организация с контактами, продукт с тарифами в тенге, блок «Вопросы» (FAQPage);
+- `robots.txt` и `sitemap.xml`.
+
+**Адрес сайта** — `https://webmoika.kz/`, он прописан в canonical, Open Graph, JSON-LD, `sitemap.xml` и `robots.txt`. Копия на GitHub Pages (`ilyasqa02.github.io/r8-crm-landing/`) тоже указывает canonical на webmoika.kz, поэтому поисковики не посчитают её дублем. В рекламе давайте ссылки только на webmoika.kz.
+
+**Выкладка на webmoika.kz:** после изменений залейте в `httpdocs` на хостинге `index.html`, `robots.txt`, `sitemap.xml`, папки `css`, `js`, `img` (особенно новые `js/analytics.js` и `img/og-image.png`).
+
+**Подключение вебмастеров (один раз):**
+
+1. Google Search Console (search.google.com/search-console) -> «Добавить ресурс» -> «Префикс URL» -> адрес сайта -> способ «Тег HTML». Код из тега вставьте в строку `google-site-verification` в `index.html` и раскомментируйте её. После публикации нажмите «Подтвердить», затем в «Файлы Sitemap» добавьте `sitemap.xml`.
+2. Яндекс.Вебмастер (webmaster.yandex.kz) — так же, строка `yandex-verification`, потом «Индексирование -> Файлы Sitemap».
+3. Проверить превью ссылки: developers.facebook.com/tools/debug (Facebook/Instagram/WhatsApp), проверить разметку: search.google.com/test/rich-results.
+
+## Аналитика и реклама
+
+ID счётчиков вписываются в `index.html`, в блок `window.R8_TRACKING`. Пустой ID — счётчик не загружается, страница работает как раньше.
+
+| Поле | Где взять |
+|---|---|
+| `ga4` | Google Analytics -> Администратор -> Потоки данных -> Идентификатор потока `G-…` |
+| `googleAds` | Google Ads -> Цели -> Конверсии -> создать конверсию «Сайт» -> «Установить тег вручную»: `AW-…` |
+| `googleAdsLead` | там же, часть `send_to` после косой черты: `AW-123/`**`AbCdEf`** |
+| `yandexMetrika` | metrika.yandex.ru -> добавить счётчик -> номер счётчика |
+| `metaPixel` | Meta Events Manager -> Источники данных -> Пиксель -> ID |
+| `tiktokPixel` | TikTok Ads Manager -> Assets -> Events -> Web Events -> Pixel ID |
+
+**Цели**, которые страница отправляет сама (заводить их в кабинетах под этими именами):
+
+| Цель | Когда | Google Analytics | Яндекс Метрика (тип «JavaScript-событие») | Meta / TikTok |
+|---|---|---|---|---|
+| Заявка | любая форма отправлена успешно | `generate_lead` (+ конверсия Google Ads) | `lead`, а также `lead_callback` / `lead_demo` | `Lead` / `SubmitForm` |
+| Клик по телефону | ссылка `tel:` | `phone_click` | `phone_click` | `Contact` |
+| Клик по WhatsApp | ссылка `wa.me` | `whatsapp_click` | `whatsapp_click` | `Contact` |
+| Клик по почте | ссылка `mailto:` | `email_click` | `email_click` | `Contact` |
+
+В GA4 событие `generate_lead` отметьте как ключевое (Администратор -> События). Для рекламы оптимизируйтесь на цель «Заявка».
+
+**UTM-метки.** Давайте в объявлениях ссылки с метками, например `https://webmoika.kz/?utm_source=instagram&utm_campaign=start`. Полный адрес страницы с метками приходит в письме с заявкой (строка «Страница»), так что видно, из какой рекламы пришёл клиент.
+
+Если на сайте настроен Content-Security-Policy, для счётчиков разрешите `googletagmanager.com`, `google-analytics.com`, `mc.yandex.ru`, `connect.facebook.net`, `analytics.tiktok.com`.
 
 ## Контакты на странице
 
